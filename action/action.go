@@ -64,7 +64,7 @@ func (a *EvaluatePolicyAction) determinePolicyId(ctx context.Context) (string, e
 
 	a.logger.Info("Fetching policy by name", zap.String("policyName", a.config.PolicyName))
 	policies, err := a.client.ListPolicies(ctx, &rode.ListPoliciesRequest{
-		Filter: fmt.Sprintf(`name == "%s"`, a.config.PolicyName),
+		Filter: fmt.Sprintf(`policy.name == "%s"`, a.config.PolicyName),
 	})
 
 	if err != nil {

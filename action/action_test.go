@@ -116,7 +116,7 @@ var _ = Describe("EvaluatePolicyAction", func() {
 					Expect(rodeClient.ListPoliciesCallCount()).To(Equal(1))
 					_, actualRequest, _ := rodeClient.ListPoliciesArgsForCall(0)
 
-					Expect(actualRequest.Filter).To(Equal(`name == "` + expectedPolicyName + `"`))
+					Expect(actualRequest.Filter).To(Equal(`policy.name == "` + expectedPolicyName + `"`))
 				})
 
 				It("should use the policy id during evaluation", func() {
