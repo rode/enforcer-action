@@ -7,7 +7,7 @@ branding:
 
 runs:
   using: docker
-  image: docker://ghcr.io/rode/evaluate-policy-action:latest
+  image: Dockerfile
   env:
     ENFORCE: ${{ inputs.enforce }}
     POLICY_ID: ${{ inputs.policyId }}
