@@ -1,0 +1,45 @@
+name: evaluate-policy
+author: rode@liatrio.com
+description: Evaluates a resource against a defined policy
+branding:
+  icon: anchor
+  color: green
+
+runs:
+  using: docker
+  image: docker://ghcr.io/rode/evaluate-policy-action:latest
+  env:
+    ENFORCE: ${{ inputs.enforce }}
+    POLICY_ID: ${{ inputs.policyId }}
+    POLICY_NAME: ${{ inputs.policyName }}
+    RESOURCE_URI: ${{ inputs.resourceUri }}
+    RODE_HOST: ${{ inputs.rodeHost }}
+    RODE_INSECURE: ${{ inputs.rodeInsecure }}
+
+inputs:
+  enforce:
+    description: "Controls whether the step should fail if the policy fails."
+    required: true
+    default: "true"
+  policyId:
+    description: "The policy id to evaluate against. Exactly one of policyName or policyId should be set."
+    required: false
+    default: ""
+  policyName:
+    description: "Name of the policy to evaluate against the resource. Exactly one of policyName or policyId should be set."
+    required: false
+    default: ""
+  resourceUri:
+    description: "The resource to evaluate policy against."
+    required: true
+  rodeHost:
+    description: "Hostname of the Rode instance"
+    required: true
+  rodeInsecure:
+    description: ""
+    required: true
+    default: "false"
+
+outputs:
+  pass:
+    description: Whether the resource passed the policy evaluation
