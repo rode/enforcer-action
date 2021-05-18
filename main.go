@@ -51,7 +51,12 @@ func newRodeClient(logger *zap.Logger, conf *config.Config) (*grpc.ClientConn, r
 }
 
 func newLogger() (*zap.Logger, error) {
-	return zap.NewDevelopment()
+	c := zap.NewDevelopmentConfig()
+	c.DisableCaller = true
+	c.EncoderConfig.LevelKey = ""
+	c.EncoderConfig.TimeKey = ""
+
+	return c.Build()
 }
 
 func setOutputVariable(name string, value bool) {
@@ -87,7 +92,6 @@ func main() {
 	setOutputVariable("pass", pass)
 
 	if !pass && c.Enforce {
-		logger.Info("Policy evaluation failed")
 		os.Exit(1)
 	}
 }
