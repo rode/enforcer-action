@@ -17,6 +17,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/rode/evaluate-policy-action/config"
 	rode "github.com/rode/rode/proto/v1alpha1"
@@ -43,7 +44,7 @@ func (a *EvaluatePolicyAction) Run(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	a.logger.Info("Evaluating policy", zap.String("policyId", policyId))
+	a.logger.Info("Evaluating policy", zap.String("policyId", policyId), zap.String("resource", a.config.ResourceUri))
 	response, err := a.client.EvaluatePolicy(ctx, &rode.EvaluatePolicyRequest{
 		Policy:      policyId,
 		ResourceUri: a.config.ResourceUri,
@@ -52,6 +53,22 @@ func (a *EvaluatePolicyAction) Run(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("error evaluating policy: %s", err)
 	}
+
+	var b strings.Builder
+	resultMessage := "failed"
+	if response.Pass {
+		resultMessage = "passed"
+	}
+
+	fmt.Fprintf(&b, "Resource %s policy:\n", resultMessage)
+
+	for _, result := range response.Result {
+		for _, v := range result.Violations {
+			fmt.Fprintln(&b, v.Message)
+		}
+	}
+
+	a.logger.Info(b.String())
 
 	return response.Pass, nil
 }
