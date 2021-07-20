@@ -97,10 +97,8 @@ var _ = Describe("EvaluatePolicyAction", func() {
 				listPoliciesResponse = &rode.ListPoliciesResponse{
 					Policies: []*rode.Policy{
 						{
-							Id: expectedPolicyId,
-							Policy: &rode.PolicyEntity{
-								Name: expectedPolicyName,
-							},
+							Id:   expectedPolicyId,
+							Name: expectedPolicyName,
 						},
 					},
 				}
@@ -116,7 +114,7 @@ var _ = Describe("EvaluatePolicyAction", func() {
 					Expect(rodeClient.ListPoliciesCallCount()).To(Equal(1))
 					_, actualRequest, _ := rodeClient.ListPoliciesArgsForCall(0)
 
-					Expect(actualRequest.Filter).To(Equal(`policy.name == "` + expectedPolicyName + `"`))
+					Expect(actualRequest.Filter).To(Equal(`name == "` + expectedPolicyName + `"`))
 				})
 
 				It("should use the policy id during evaluation", func() {
