@@ -15,123 +15,109 @@
 package config
 
 import (
-	"context"
-	"fmt"
+	"os"
 	"strconv"
 
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	"github.com/sethvargo/go-envconfig"
+	"github.com/rode/rode/common"
 )
 
 var _ = Describe("Config", func() {
 	Context("Build", func() {
 		var (
-			ctx = context.Background()
-
-			configMap            map[string]string
-			expectedEnforce      bool
-			expectedRodeInsecure bool
-
-			actualConfig *Config
-			actualError  error
+			expectedPolicyGroup = fake.URL()
+			expectedResourceUri = fake.LetterN(10)
 		)
 
-		BeforeEach(func() {
-			expectedEnforce = fake.Bool()
-			expectedRodeInsecure = fake.Bool()
+		type testCase struct {
+			flags       []string
+			expectError bool
+			expected    *Config
+		}
 
-			configMap = map[string]string{
-				"ENFORCE":       strconv.FormatBool(expectedEnforce),
-				"POLICY_ID":     fake.UUID(),
-				"POLICY_NAME":   "",
-				"RESOURCE_URI":  fake.URL(),
-				"RODE_HOST":     fake.DomainName(),
-				"RODE_INSECURE": strconv.FormatBool(expectedRodeInsecure),
+		DescribeTable("configuration", func(tc *testCase) {
+			c, err := Build("enforcer-action", tc.flags)
+
+			if tc.expectError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(c).To(Equal(tc.expected))
 			}
-		})
+		},
+			Entry("minimum configuration", &testCase{
+				flags: []string{
+					"--policy-group=" + expectedPolicyGroup,
+					"--resource-uri=" + expectedResourceUri,
+				},
+				expected: &Config{
+					Enforce: true,
+					GitHub:  populateGitHubConfig(),
+					ClientConfig: &common.ClientConfig{
+						Rode: &common.RodeClientConfig{
+							Host: "rode:50051",
+						},
+						OIDCAuth:  &common.OIDCAuthConfig{},
+						BasicAuth: &common.BasicAuthConfig{},
+					},
+					ResourceUri: expectedResourceUri,
+					PolicyGroup: expectedPolicyGroup,
+				},
+			}),
 
-		JustBeforeEach(func() {
-			actualConfig, actualError = Build(ctx, envconfig.MapLookuper(configMap))
-		})
+			Entry("whitespace in policy group name", &testCase{
+				flags: []string{
+					"--policy-group=" + "   " + expectedPolicyGroup + "   ",
+					"--resource-uri=" + expectedResourceUri,
+				},
+				expected: &Config{
+					Enforce: true,
+					GitHub:  populateGitHubConfig(),
+					ClientConfig: &common.ClientConfig{
+						Rode: &common.RodeClientConfig{
+							Host: "rode:50051",
+						},
+						OIDCAuth:  &common.OIDCAuthConfig{},
+						BasicAuth: &common.BasicAuthConfig{},
+					},
+					ResourceUri: expectedResourceUri,
+					PolicyGroup: expectedPolicyGroup,
+				},
+			}),
+			Entry("missing policy group", &testCase{
+				flags: []string{
+					"--resource-uri=" + expectedResourceUri,
+				},
+				expectError: true,
+			}),
 
-		Describe("valid configuration", func() {
-			It("should not return an error", func() {
-				Expect(actualError).NotTo(HaveOccurred())
-			})
-
-			It("should map the environment config to the config struct", func() {
-				Expect(actualConfig.PolicyId).To(Equal(configMap["POLICY_ID"]))
-				Expect(actualConfig.PolicyName).To(BeEmpty())
-
-				Expect(actualConfig.Enforce).To(Equal(expectedEnforce))
-				Expect(actualConfig.ResourceUri).To(Equal(configMap["RESOURCE_URI"]))
-
-				Expect(actualConfig.Rode.Host).To(Equal(configMap["RODE_HOST"]))
-				Expect(actualConfig.Rode.Insecure).To(Equal(expectedRodeInsecure))
-			})
-		})
-
-		Describe("policyId and policyName are set to the empty string", func() {
-			BeforeEach(func() {
-				configMap["POLICY_ID"] = ""
-				configMap["POLICY_NAME"] = ""
-			})
-
-			It("should return an error", func() {
-				Expect(actualError).To(MatchError("must set either policyName or policyId"))
-			})
-		})
-
-		Describe("both policyId and policyName are set", func() {
-			BeforeEach(func() {
-				configMap["POLICY_ID"] = fake.UUID()
-				configMap["POLICY_NAME"] = fake.Word()
-			})
-
-			It("should return an error", func() {
-				Expect(actualError).To(MatchError("only one of policyId or policyName should be specified"))
-			})
-		})
-
-		Describe("policyName contains additional whitespace", func() {
-			var expectedPolicyName string
-
-			BeforeEach(func() {
-				expectedPolicyName = fake.Word()
-
-				configMap["POLICY_ID"] = ""
-				configMap["POLICY_NAME"] = fmt.Sprintf(" %s  \n\n", expectedPolicyName)
-			})
-
-			It("should strip the whitespace", func() {
-				Expect(actualConfig.PolicyName).To(Equal(expectedPolicyName))
-			})
-		})
-
-		Describe("policyId contains additional whitespace", func() {
-			var expectedPolicyId string
-
-			BeforeEach(func() {
-				expectedPolicyId = fake.UUID()
-
-				configMap["POLICY_ID"] = fmt.Sprintf(" %s  \n\n", expectedPolicyId)
-				configMap["POLICY_NAME"] = ""
-			})
-
-			It("should strip the whitespace", func() {
-				Expect(actualConfig.PolicyId).To(Equal(expectedPolicyId))
-			})
-		})
-
-		Describe("Rode config is missing", func() {
-			BeforeEach(func() {
-				delete(configMap, "RODE_HOST")
-			})
-
-			It("should return an error", func() {
-				Expect(actualError).To(HaveOccurred())
-			})
-		})
+			Entry("missing resource uri", &testCase{
+				flags: []string{
+					"--policy-group=" + expectedPolicyGroup,
+				},
+				expectError: true,
+			}),
+			Entry("invalid flag value", &testCase{
+				flags:       []string{"--enforce=foo"},
+				expectError: true,
+			}),
+		)
 	})
 })
+
+// The GITHUB_ environment variables will be set when running the tests in CI
+func populateGitHubConfig() *GitHubConfig {
+	runId := 0
+	runIdEnv := os.Getenv("GITHUB_RUN_ID")
+	if runIdEnv != "" {
+		runId, _ = strconv.Atoi(runIdEnv)
+	}
+
+	return &GitHubConfig{
+		GitHubRunId:      runId,
+		GitHubServerUrl:  os.Getenv("GITHUB_SERVER_URL"),
+		GitHubRepository: os.Getenv("GITHUB_REPOSITORY"),
+	}
+}

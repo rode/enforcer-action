@@ -19,82 +19,74 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rode/evaluate-policy-action/config"
+	"github.com/rode/enforcer-action/config"
 	rode "github.com/rode/rode/proto/v1alpha1"
 	"go.uber.org/zap"
 )
 
-type EvaluatePolicyAction struct {
+type EnforcerAction struct {
 	config *config.Config
 	client rode.RodeClient
 	logger *zap.Logger
 }
 
-func NewEvaluatePolicyAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient) *EvaluatePolicyAction {
-	return &EvaluatePolicyAction{
+type ActionResult struct {
+	Pass             bool
+	FailBuild        bool
+	EvaluationReport string
+}
+
+func NewEnforcerAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient) *EnforcerAction {
+	return &EnforcerAction{
 		conf,
 		client,
 		logger,
 	}
 }
 
-func (a *EvaluatePolicyAction) Run(ctx context.Context) (bool, error) {
-	policyId, err := a.determinePolicyId(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	a.logger.Info("Evaluating policy", zap.String("policyId", policyId), zap.String("resource", a.config.ResourceUri))
-	response, err := a.client.EvaluatePolicy(ctx, &rode.EvaluatePolicyRequest{
-		Policy:      policyId,
+func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
+	a.logger.Info("Evaluating resource", zap.String("policyGroup", a.config.PolicyGroup), zap.String("resourceUri", a.config.ResourceUri))
+	response, err := a.client.EvaluateResource(ctx, &rode.ResourceEvaluationRequest{
+		PolicyGroup: a.config.PolicyGroup,
 		ResourceUri: a.config.ResourceUri,
+		Source: &rode.ResourceEvaluationSource{
+			Name: "enforcer-action",
+			Url:  fmt.Sprintf("%s/%s/actions/runs/%d", a.config.GitHub.GitHubServerUrl, a.config.GitHub.GitHubRepository, a.config.GitHub.GitHubRunId),
+		},
 	})
 
 	if err != nil {
-		return false, fmt.Errorf("error evaluating policy: %s", err)
+		return nil, fmt.Errorf("error evaluating resource: %s", err)
 	}
 
 	var b strings.Builder
-	resultMessage := "failed"
-	if response.Pass {
-		resultMessage = "passed"
-	}
+	resultMessage := statusMessage(response.ResourceEvaluation.Pass)
+	fmt.Fprintf(&b, "Resource %s evaluation (id: %s):\n", resultMessage, response.ResourceEvaluation.Id)
 
-	fmt.Fprintf(&b, "Resource %s policy:\n", resultMessage)
+	for _, result := range response.PolicyEvaluations {
+		policy, err := a.client.GetPolicy(ctx, &rode.GetPolicyRequest{Id: result.PolicyVersionId})
+		if err != nil {
+			return nil, err
+		}
 
-	for _, result := range response.Result {
+		fmt.Fprintln(&b, fmt.Sprintf("\npolicy \"%s\" %s", policy.Name, statusMessage(result.Pass)))
+
 		for _, v := range result.Violations {
 			fmt.Fprintln(&b, v.Message)
 		}
 	}
 
-	a.logger.Info(b.String())
-
-	return response.Pass, nil
+	return &ActionResult{
+		FailBuild:        a.config.Enforce && !response.ResourceEvaluation.Pass,
+		Pass:             response.ResourceEvaluation.Pass,
+		EvaluationReport: b.String(),
+	}, nil
 }
 
-func (a *EvaluatePolicyAction) determinePolicyId(ctx context.Context) (string, error) {
-	if a.config.PolicyId != "" {
-		a.logger.Info("Taking policy id from config", zap.String("policyId", a.config.PolicyId))
-		return a.config.PolicyId, nil
+func statusMessage(pass bool) string {
+	if pass {
+		return "PASSED"
 	}
 
-	a.logger.Info("Fetching policy by name", zap.String("policyName", a.config.PolicyName))
-	policies, err := a.client.ListPolicies(ctx, &rode.ListPoliciesRequest{
-		Filter: fmt.Sprintf(`name == "%s"`, a.config.PolicyName),
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("error fetching policies: %s", err)
-	}
-
-	if len(policies.Policies) == 0 {
-		return "", fmt.Errorf("unable to find a policy for %s", a.config.PolicyName)
-	}
-
-	if len(policies.Policies) > 1 {
-		a.logger.Warn("Found more than one policy matching name, taking the first", zap.String("name", a.config.PolicyName))
-	}
-
-	return policies.Policies[0].Id, nil
+	return "FAILED"
 }

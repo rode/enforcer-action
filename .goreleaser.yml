@@ -1,4 +1,4 @@
-project_name: evaluate-policy-action
+project_name: enforcer-action
 before:
   hooks:
     # You may remove this if you don't use go modules.
@@ -12,10 +12,10 @@ builds:
       - darwin
 dockers:
   - image_templates:
-      - "ghcr.io/rode/evaluate-policy-action:latest"
-      - "ghcr.io/rode/evaluate-policy-action:{{ .Tag }}"
-      - "ghcr.io/rode/evaluate-policy-action:v{{ .Major }}"
-      - "ghcr.io/rode/evaluate-policy-action:v{{ .Major }}.{{ .Minor }}"
+      - "ghcr.io/rode/enforcer-action:latest"
+      - "ghcr.io/rode/enforcer-action:{{ .Tag }}"
+      - "ghcr.io/rode/enforcer-action:v{{ .Major }}"
+      - "ghcr.io/rode/enforcer-action:v{{ .Major }}.{{ .Minor }}"
     extra_files:
       - "go.mod"
       - "go.sum"

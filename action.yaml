@@ -1,33 +1,32 @@
-name: evaluate-policy
+name: enforcer
 author: rode@liatrio.com
-description: Evaluates a resource against a defined policy
+description: Evaluates a resource against a policy group in order to gate deployments.
 branding:
   icon: anchor
   color: green
 
 runs:
   using: docker
-  image: docker://ghcr.io/rode/evaluate-policy-action:latest
+  image: docker://ghcr.io/rode/enforcer-action:latest
   env:
+    ACCESS_TOKEN: ${{ inputs.accessToken }}
     ENFORCE: ${{ inputs.enforce }}
-    POLICY_ID: ${{ inputs.policyId }}
-    POLICY_NAME: ${{ inputs.policyName }}
+    POLICY_GROUP: ${{ inputs.policyGroup }}
     RESOURCE_URI: ${{ inputs.resourceUri }}
     RODE_HOST: ${{ inputs.rodeHost }}
-    RODE_INSECURE: ${{ inputs.rodeInsecure }}
+    RODE_INSECURE_DISABLE_TRANSPORT_SECURITY: ${{ inputs.rodeInsecure }}
 
 inputs:
+  accessToken:
+    description: "An access token that will be included in requests to Rode."
+    required: false
   enforce:
-    description: "Controls whether the step should fail if the policy fails."
+    description: "Controls whether the step should fail if the evaluation fails."
     required: true
     default: "true"
-  policyId:
-    description: "The policy id to evaluate against. Exactly one of policyName or policyId should be set."
-    required: false
-    default: ""
-  policyName:
-    description: "Name of the policy to evaluate against the resource. Exactly one of policyName or policyId should be set."
-    required: false
+  policyGroup:
+    description: "The policy group to evaluate the resource against."
+    required: true
     default: ""
   resourceUri:
     description: "The resource to evaluate policy against."
@@ -36,10 +35,10 @@ inputs:
     description: "Hostname of the Rode instance"
     required: true
   rodeInsecure:
-    description: ""
+    description: "Disables transport security when communicating with Rode."
     required: true
     default: "false"
 
 outputs:
   pass:
-    description: Whether the resource passed the policy evaluation
+    description: Whether the resource passed evaluation

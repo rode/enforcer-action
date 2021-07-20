@@ -9,13 +9,13 @@ COPY main.go main.go
 COPY config/ config/
 COPY action/ action/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o evaluate-policy-action
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o enforcer-action
 
 # ---------------
 FROM gcr.io/distroless/static:latest
 
-LABEL org.opencontainers.image.source=https://github.com/rode/evaluate-policy-action
+LABEL org.opencontainers.image.source=https://github.com/rode/enforcer-action
 
-COPY --from=builder /workspace/evaluate-policy-action /usr/local/bin/evaluate-policy-action
+COPY --from=builder /workspace/enforcer-action /usr/local/bin/enforcer-action
 
-ENTRYPOINT ["evaluate-policy-action"]
+ENTRYPOINT ["enforcer-action"]
