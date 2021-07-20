@@ -97,10 +97,8 @@ var _ = Describe("EvaluatePolicyAction", func() {
 				listPoliciesResponse = &rode.ListPoliciesResponse{
 					Policies: []*rode.Policy{
 						{
-							Id: expectedPolicyId,
-							Policy: &rode.PolicyEntity{
-								Name: expectedPolicyName,
-							},
+							Id:   expectedPolicyId,
+							Name: expectedPolicyName,
 						},
 					},
 				}

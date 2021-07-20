@@ -3,10 +3,10 @@ module github.com/rode/evaluate-policy-action
 go 1.16
 
 require (
-	github.com/brianvoe/gofakeit/v6 v6.4.1
+	github.com/brianvoe/gofakeit/v6 v6.5.0
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.3.0 // indirect
-	github.com/onsi/ginkgo v1.16.2
+	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.12.0
 	github.com/rode/rode v0.14.4
 	github.com/sethvargo/go-envconfig v0.3.5
