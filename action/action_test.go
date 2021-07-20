@@ -23,18 +23,18 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/rode/evaluate-policy-action/config"
+	"github.com/rode/enforcer-action/config"
 	rode "github.com/rode/rode/proto/v1alpha1"
 	"github.com/rode/rode/proto/v1alpha1fakes"
 	"google.golang.org/grpc"
 )
 
-var _ = Describe("EvaluateResourceAction", func() {
+var _ = Describe("EnforcerAction", func() {
 	var (
 		ctx                 = context.Background()
 		conf                *config.Config
 		rodeClient          *v1alpha1fakes.FakeRodeClient
-		action              *EvaluateResourceAction
+		action              *EnforcerAction
 		expectedPolicyGroup string
 		expectedResourceUri string
 	)
@@ -54,7 +54,7 @@ var _ = Describe("EvaluateResourceAction", func() {
 			},
 		}
 
-		action = NewEvaluateResourceAction(logger, conf, rodeClient)
+		action = NewEnforcerAction(logger, conf, rodeClient)
 	})
 
 	Describe("Run", func() {

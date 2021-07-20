@@ -1,4 +1,4 @@
-module github.com/rode/evaluate-policy-action
+module github.com/rode/enforcer-action
 
 go 1.16
 

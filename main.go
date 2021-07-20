@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rode/evaluate-policy-action/action"
-	"github.com/rode/evaluate-policy-action/config"
+	"github.com/rode/enforcer-action/action"
+	"github.com/rode/enforcer-action/config"
 	"github.com/rode/rode/common"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -84,8 +84,8 @@ func main() {
 		logger.Fatal("failed to create rode client", zap.Error(err))
 	}
 
-	evaluatePolicyAction := action.NewEvaluateResourceAction(logger, c, rodeClient)
-	result, err := evaluatePolicyAction.Run(ctx)
+	enforcer := action.NewEnforcerAction(logger, c, rodeClient)
+	result, err := enforcer.Run(ctx)
 	if err != nil {
 		logger.Fatal("error evaluating resource", zap.Error(err))
 	}

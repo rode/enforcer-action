@@ -1,13 +1,13 @@
-name: evaluate-resource
+name: enforcer
 author: rode@liatrio.com
-description: Evaluates a resource against a policy group
+description: Evaluates a resource against a policy group in order to gate deployments.
 branding:
   icon: anchor
   color: green
 
 runs:
   using: docker
-  image: docker://ghcr.io/rode/evaluate-policy-action:latest
+  image: docker://ghcr.io/rode/enforcer-action:latest
   env:
     ACCESS_TOKEN: ${{ inputs.accessToken }}
     ENFORCE: ${{ inputs.enforce }}

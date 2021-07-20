@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rode/evaluate-policy-action/config"
+	"github.com/rode/enforcer-action/config"
 	rode "github.com/rode/rode/proto/v1alpha1"
 	"go.uber.org/zap"
 )
 
-type EvaluateResourceAction struct {
+type EnforcerAction struct {
 	config *config.Config
 	client rode.RodeClient
 	logger *zap.Logger
@@ -36,15 +36,15 @@ type ActionResult struct {
 	EvaluationReport string
 }
 
-func NewEvaluateResourceAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient) *EvaluateResourceAction {
-	return &EvaluateResourceAction{
+func NewEnforcerAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient) *EnforcerAction {
+	return &EnforcerAction{
 		conf,
 		client,
 		logger,
 	}
 }
 
-func (a *EvaluateResourceAction) Run(ctx context.Context) (*ActionResult, error) {
+func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
 	a.logger.Info("Evaluating resource", zap.String("policyGroup", a.config.PolicyGroup), zap.String("resourceUri", a.config.ResourceUri))
 	response, err := a.client.EvaluateResource(ctx, &rode.ResourceEvaluationRequest{
 		PolicyGroup: a.config.PolicyGroup,
@@ -87,5 +87,6 @@ func statusMessage(pass bool) string {
 	if pass {
 		return "PASSED"
 	}
+
 	return "FAILED"
 }

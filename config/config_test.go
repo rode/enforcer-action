@@ -38,7 +38,7 @@ var _ = Describe("Config", func() {
 		}
 
 		DescribeTable("configuration", func(tc *testCase) {
-			c, err := Build("evaluate-resource-action", tc.flags)
+			c, err := Build("enforcer-action", tc.flags)
 
 			if tc.expectError {
 				Expect(err).To(HaveOccurred())
