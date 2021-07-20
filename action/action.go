@@ -87,6 +87,5 @@ func statusMessage(pass bool) string {
 	if pass {
 		return "PASSED"
 	}
-
 	return "FAILED"
 }
