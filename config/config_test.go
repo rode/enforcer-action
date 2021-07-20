@@ -15,6 +15,9 @@
 package config
 
 import (
+	"os"
+	"strconv"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -51,7 +54,7 @@ var _ = Describe("Config", func() {
 				},
 				expected: &Config{
 					Enforce: true,
-					GitHub:  &GitHubConfig{},
+					GitHub: populateGitHubConfig(),
 					ClientConfig: &common.ClientConfig{
 						Rode: &common.RodeClientConfig{
 							Host: "rode:50051",
@@ -71,7 +74,7 @@ var _ = Describe("Config", func() {
 				},
 				expected: &Config{
 					Enforce: true,
-					GitHub:  &GitHubConfig{},
+					GitHub:  populateGitHubConfig(),
 					ClientConfig: &common.ClientConfig{
 						Rode: &common.RodeClientConfig{
 							Host: "rode:50051",
@@ -103,3 +106,18 @@ var _ = Describe("Config", func() {
 		)
 	})
 })
+
+// The GITHUB_ environment variables will be set when running the tests in CI
+func populateGitHubConfig() *GitHubConfig {
+	runId := 0
+	runIdEnv := os.Getenv("GITHUB_RUN_ID")
+	if runIdEnv != "" {
+		runId, _ = strconv.Atoi(runIdEnv)
+	}
+
+	return &GitHubConfig{
+		GitHubRunId:      runId,
+		GitHubServerUrl:  os.Getenv("GITHUB_SERVER_URL"),
+		GitHubRepository: os.Getenv("GITHUB_REPOSITORY"),
+	}
+}
