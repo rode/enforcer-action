@@ -50,7 +50,7 @@ func (a *EvaluateResourceAction) Run(ctx context.Context) (*ActionResult, error)
 		PolicyGroup: a.config.PolicyGroup,
 		ResourceUri: a.config.ResourceUri,
 		Source: &rode.ResourceEvaluationSource{
-			Name: "evaluate-resource-action",
+			Name: "enforcer-action",
 			Url:  fmt.Sprintf("%s/%s/actions/runs/%d", a.config.GitHub.GitHubServerUrl, a.config.GitHub.GitHubRepository, a.config.GitHub.GitHubRunId),
 		},
 	})

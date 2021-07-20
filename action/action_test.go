@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -114,11 +116,21 @@ var _ = Describe("EvaluateResourceAction", func() {
 
 		When("the resource evaluation passes", func() {
 			It("should call Rode to evaluate the resource", func() {
+				expectedSourceUrl := strings.Join([]string{
+					conf.GitHub.GitHubServerUrl,
+					conf.GitHub.GitHubRepository,
+					"actions",
+					"runs",
+					strconv.Itoa(conf.GitHub.GitHubRunId),
+				}, "/")
+
 				Expect(rodeClient.EvaluateResourceCallCount()).To(Equal(1))
 
 				_, actualRequest, _ := rodeClient.EvaluateResourceArgsForCall(0)
 				Expect(actualRequest.ResourceUri).To(Equal(expectedResourceUri))
 				Expect(actualRequest.PolicyGroup).To(Equal(expectedPolicyGroup))
+				Expect(actualRequest.Source.Name).To(Equal("enforcer-action"))
+				Expect(actualRequest.Source.Url).To(Equal(expectedSourceUrl))
 			})
 
 			It("should return the result of the evaluation", func() {
