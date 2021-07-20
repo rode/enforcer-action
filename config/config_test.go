@@ -54,7 +54,7 @@ var _ = Describe("Config", func() {
 				},
 				expected: &Config{
 					Enforce: true,
-					GitHub: populateGitHubConfig(),
+					GitHub:  populateGitHubConfig(),
 					ClientConfig: &common.ClientConfig{
 						Rode: &common.RodeClientConfig{
 							Host: "rode:50051",
