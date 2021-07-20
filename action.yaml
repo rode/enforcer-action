@@ -1,4 +1,4 @@
-name: evaluate-policy
+name: evaluate-resource
 author: rode@liatrio.com
 description: Evaluates a resource against a policy group
 branding:
