@@ -17,60 +17,126 @@ package action
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rode/evaluate-policy-action/config"
-	"github.com/rode/evaluate-policy-action/mocks"
 	rode "github.com/rode/rode/proto/v1alpha1"
+	"github.com/rode/rode/proto/v1alpha1fakes"
+	"google.golang.org/grpc"
 )
 
-var _ = Describe("EvaluatePolicyAction", func() {
+var _ = Describe("EvaluateResourceAction", func() {
 	var (
-		ctx        = context.Background()
-		conf       *config.Config
-		rodeClient *mocks.FakeRodeClient
-		action     *EvaluatePolicyAction
+		ctx                 = context.Background()
+		conf                *config.Config
+		rodeClient          *v1alpha1fakes.FakeRodeClient
+		action              *EvaluateResourceAction
+		expectedPolicyGroup string
+		expectedResourceUri string
 	)
 
 	BeforeEach(func() {
-		rodeClient = &mocks.FakeRodeClient{}
+		rodeClient = &v1alpha1fakes.FakeRodeClient{}
+		expectedPolicyGroup = fake.LetterN(10)
+		expectedResourceUri = fake.URL()
 		conf = &config.Config{
-			PolicyId:    fake.UUID(),
-			ResourceUri: fake.URL(),
+			Enforce:     true,
+			ResourceUri: expectedResourceUri,
+			PolicyGroup: expectedPolicyGroup,
+			GitHub: &config.GitHubConfig{
+				GitHubServerUrl:  fake.URL(),
+				GitHubRepository: fmt.Sprintf("%s/%s", fake.LetterN(10), fake.LetterN(10)),
+				GitHubRunId:      fake.Number(10, 100),
+			},
 		}
 
-		action = NewEvaluatePolicyAction(logger, conf, rodeClient)
+		action = NewEvaluateResourceAction(logger, conf, rodeClient)
 	})
 
 	Describe("Run", func() {
 		var (
-			actualPass  bool
-			actualError error
+			actualResult           *ActionResult
+			actualError            error
+			policyEvaluationsCount int
+
+			resourceEvaluationResult *rode.ResourceEvaluationResult
+			resourceEvaluationError  error
+			expectedPolicyNames      map[string]string
 		)
 
-		JustBeforeEach(func() {
-			actualPass, actualError = action.Run(ctx)
+		BeforeEach(func() {
+			policyEvaluationsCount = fake.Number(2, 5)
+			resourceEvaluationResult = &rode.ResourceEvaluationResult{
+				ResourceEvaluation: &rode.ResourceEvaluation{
+					Id:   fake.UUID(),
+					Pass: true,
+				},
+			}
+			resourceEvaluationError = nil
+			expectedPolicyNames = map[string]string{}
+
+			for i := 0; i < policyEvaluationsCount; i++ {
+				evaluation := &rode.PolicyEvaluation{
+					Id:                   fake.UUID(),
+					ResourceEvaluationId: resourceEvaluationResult.ResourceEvaluation.Id,
+					Pass:                 fake.Bool(),
+					PolicyVersionId:      fake.UUID(),
+					Violations: []*rode.EvaluatePolicyViolation{
+						{
+							Message: fake.Word(),
+						},
+						{
+							Message: fake.Word(),
+						},
+					},
+				}
+				expectedPolicyNames[evaluation.Id] = fake.Word()
+				resourceEvaluationResult.PolicyEvaluations = append(resourceEvaluationResult.PolicyEvaluations, evaluation)
+			}
+
+			rodeClient.GetPolicyStub = func(_ context.Context, request *rode.GetPolicyRequest, _ ...grpc.CallOption) (*rode.Policy, error) {
+				policyName := expectedPolicyNames[request.Id]
+
+				return &rode.Policy{
+					Id:   request.Id,
+					Name: policyName,
+				}, nil
+			}
 		})
 
-		When("policy is successfully evaluated", func() {
-			var expectedPass bool
+		JustBeforeEach(func() {
+			rodeClient.EvaluateResourceReturns(resourceEvaluationResult, resourceEvaluationError)
 
-			BeforeEach(func() {
-				expectedPass = fake.Bool()
-				rodeClient.EvaluatePolicyReturns(&rode.EvaluatePolicyResponse{Pass: expectedPass}, nil)
-			})
+			actualResult, actualError = action.Run(ctx)
+		})
 
-			It("should call Rode to evaluate policy", func() {
-				Expect(rodeClient.EvaluatePolicyCallCount()).To(Equal(1))
+		When("the resource evaluation passes", func() {
+			It("should call Rode to evaluate the resource", func() {
+				Expect(rodeClient.EvaluateResourceCallCount()).To(Equal(1))
 
-				_, actualRequest, _ := rodeClient.EvaluatePolicyArgsForCall(0)
-				Expect(actualRequest.ResourceUri).To(Equal(conf.ResourceUri))
-				Expect(actualRequest.Policy).To(Equal(conf.PolicyId))
+				_, actualRequest, _ := rodeClient.EvaluateResourceArgsForCall(0)
+				Expect(actualRequest.ResourceUri).To(Equal(expectedResourceUri))
+				Expect(actualRequest.PolicyGroup).To(Equal(expectedPolicyGroup))
 			})
 
 			It("should return the result of the evaluation", func() {
-				Expect(actualPass).To(Equal(expectedPass))
+				Expect(actualResult.Pass).To(BeTrue())
+				Expect(actualResult.FailBuild).To(BeFalse())
+				Expect(actualResult.EvaluationReport).To(ContainSubstring("Resource PASSED evaluation"))
+			})
+
+			It("should fetch the policy names to include in the output", func() {
+				Expect(rodeClient.GetPolicyCallCount()).To(Equal(policyEvaluationsCount))
+
+				for i := 0; i < policyEvaluationsCount; i++ {
+					expectedPolicyId := resourceEvaluationResult.PolicyEvaluations[i].PolicyVersionId
+					_, actualRequest, _ := rodeClient.GetPolicyArgsForCall(i)
+
+					Expect(actualRequest.Id).To(Equal(expectedPolicyId))
+					Expect(actualResult.EvaluationReport).To(ContainSubstring(expectedPolicyNames[expectedPolicyId]))
+				}
 			})
 
 			It("should not return an error", func() {
@@ -78,119 +144,52 @@ var _ = Describe("EvaluatePolicyAction", func() {
 			})
 		})
 
-		Context("policyName is set", func() {
-			var (
-				expectedPolicyName   string
-				expectedPolicyId     string
-				listPoliciesError    error
-				listPoliciesResponse *rode.ListPoliciesResponse
-			)
-
+		When("the resource fails evaluation", func() {
 			BeforeEach(func() {
-				expectedPolicyId = fake.UUID()
-				expectedPolicyName = fake.Word()
-
-				conf.PolicyName = expectedPolicyName
-				conf.PolicyId = ""
-
-				listPoliciesError = nil
-				listPoliciesResponse = &rode.ListPoliciesResponse{
-					Policies: []*rode.Policy{
-						{
-							Id: expectedPolicyId,
-							Policy: &rode.PolicyEntity{
-								Name: expectedPolicyName,
-							},
-						},
-					},
-				}
+				resourceEvaluationResult.ResourceEvaluation.Pass = false
 			})
 
-			When("when there's a single matching policy", func() {
-				BeforeEach(func() {
-					rodeClient.ListPoliciesReturns(listPoliciesResponse, listPoliciesError)
-					rodeClient.EvaluatePolicyReturns(&rode.EvaluatePolicyResponse{Pass: true}, nil)
-				})
-
-				It("should use Rode to search policies by name", func() {
-					Expect(rodeClient.ListPoliciesCallCount()).To(Equal(1))
-					_, actualRequest, _ := rodeClient.ListPoliciesArgsForCall(0)
-
-					Expect(actualRequest.Filter).To(Equal(`policy.name == "` + expectedPolicyName + `"`))
-				})
-
-				It("should use the policy id during evaluation", func() {
-					Expect(rodeClient.EvaluatePolicyCallCount()).To(Equal(1))
-
-					_, actualRequest, _ := rodeClient.EvaluatePolicyArgsForCall(0)
-
-					Expect(actualRequest.Policy).To(Equal(expectedPolicyId))
-				})
+			It("should fail the build", func() {
+				Expect(actualResult.Pass).To(BeFalse())
+				Expect(actualResult.FailBuild).To(BeTrue())
+				Expect(actualResult.EvaluationReport).To(ContainSubstring("Resource FAILED evaluation"))
 			})
 
-			When("no policies match the name", func() {
+			When("enforcement is disabled", func() {
 				BeforeEach(func() {
-					listPoliciesResponse.Policies = []*rode.Policy{}
-					rodeClient.ListPoliciesReturns(listPoliciesResponse, listPoliciesError)
+					conf.Enforce = false
 				})
 
-				It("should not pass", func() {
-					Expect(actualPass).To(BeFalse())
+				It("should not fail the build", func() {
+					Expect(actualResult.Pass).To(BeFalse())
+					Expect(actualResult.FailBuild).To(BeFalse())
 				})
 
-				It("should return an error", func() {
-					Expect(actualError).To(HaveOccurred())
-					Expect(actualError.Error()).To(ContainSubstring("unable to find a policy"))
-				})
-			})
-
-			When("multiple policies match the name", func() {
-				BeforeEach(func() {
-					listPoliciesResponse.Policies = append(listPoliciesResponse.Policies, &rode.Policy{Id: fake.UUID()})
-					rodeClient.ListPoliciesReturns(listPoliciesResponse, listPoliciesError)
-					rodeClient.EvaluatePolicyReturns(&rode.EvaluatePolicyResponse{Pass: true}, nil)
-				})
-
-				It("should use the first policy in the response", func() {
-					Expect(rodeClient.EvaluatePolicyCallCount()).To(Equal(1))
-
-					_, actualRequest, _ := rodeClient.EvaluatePolicyArgsForCall(0)
-
-					Expect(actualRequest.Policy).To(Equal(expectedPolicyId))
-				})
-			})
-
-			When("an error occurs searching policies", func() {
-				BeforeEach(func() {
-					listPoliciesResponse = nil
-					listPoliciesError = errors.New(fake.Word())
-
-					rodeClient.ListPoliciesReturns(listPoliciesResponse, listPoliciesError)
-				})
-
-				It("should not pass", func() {
-					Expect(actualPass).To(BeFalse())
-				})
-
-				It("should return an error", func() {
-					Expect(actualError).To(HaveOccurred())
-					Expect(actualError.Error()).To(ContainSubstring("error fetching policies"))
+				It("should not return an error", func() {
+					Expect(actualError).NotTo(HaveOccurred())
 				})
 			})
 		})
 
-		When("an error occurs evaluating policy", func() {
+		When("an error occurs evaluating the resource", func() {
 			BeforeEach(func() {
-				rodeClient.EvaluatePolicyReturns(nil, errors.New(fake.Word()))
-			})
-
-			It("should not pass", func() {
-				Expect(actualPass).To(BeFalse())
+				resourceEvaluationError = errors.New(fake.Word())
 			})
 
 			It("should return an error", func() {
+				Expect(actualResult).To(BeNil())
+				Expect(actualError).To(MatchError(ContainSubstring("error evaluating resource")))
+			})
+		})
+
+		When("an error occurs fetching the policy", func() {
+			BeforeEach(func() {
+				rodeClient.GetPolicyReturns(nil, errors.New("get policy error"))
+			})
+
+			It("should return an error", func() {
+				Expect(actualResult).To(BeNil())
 				Expect(actualError).To(HaveOccurred())
-				Expect(actualError.Error()).To(ContainSubstring("error evaluating policy"))
 			})
 		})
 	})

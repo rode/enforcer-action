@@ -16,39 +16,15 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/rode/evaluate-policy-action/action"
 	"github.com/rode/evaluate-policy-action/config"
-	rode "github.com/rode/rode/proto/v1alpha1"
-	"github.com/sethvargo/go-envconfig"
+	"github.com/rode/rode/common"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
-
-func newRodeClient(logger *zap.Logger, conf *config.Config) (*grpc.ClientConn, rode.RodeClient) {
-	dialOptions := []grpc.DialOption{
-		grpc.WithBlock(),
-	}
-	if conf.Rode.Insecure {
-		dialOptions = append(dialOptions, grpc.WithInsecure())
-	} else {
-		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	conn, err := grpc.DialContext(ctx, conf.Rode.Host, dialOptions...)
-	if err != nil {
-		logger.Fatal("failed to establish grpc connection to Rode", zap.Error(err))
-	}
-
-	return conn, rode.NewRodeClient(conn)
-}
 
 func newLogger() (*zap.Logger, error) {
 	c := zap.NewDevelopmentConfig()
@@ -68,9 +44,24 @@ func fatal(message string) {
 	os.Exit(1)
 }
 
+type staticCredential struct {
+	token                    string
+	requireTransportSecurity bool
+}
+
+func (s *staticCredential) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	return map[string]string{
+		"authorization": "Bearer " + s.token,
+	}, nil
+}
+
+func (s *staticCredential) RequireTransportSecurity() bool {
+	return s.requireTransportSecurity
+}
+
 func main() {
 	ctx := context.Background()
-	c, err := config.Build(ctx, envconfig.OsLookuper())
+	c, err := config.Build(os.Args[0], os.Args[1:])
 	if err != nil {
 		fatal(fmt.Sprintf("unable to build config: %s", err))
 	}
@@ -80,18 +71,29 @@ func main() {
 		fatal(fmt.Sprintf("failed to create logger: %s", err))
 	}
 
-	conn, client := newRodeClient(logger, c)
-	defer conn.Close()
-
-	evaluatePolicyAction := action.NewEvaluatePolicyAction(logger, c, client)
-	pass, err := evaluatePolicyAction.Run(ctx)
-	if err != nil {
-		fatal(err.Error())
+	var dialOptions []grpc.DialOption
+	if c.AccessToken != "" {
+		dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(&staticCredential{
+			token:                    c.AccessToken,
+			requireTransportSecurity: !c.ClientConfig.Rode.DisableTransportSecurity,
+		}))
 	}
 
-	setOutputVariable("pass", pass)
+	rodeClient, err := common.NewRodeClient(c.ClientConfig, dialOptions...)
+	if err != nil {
+		logger.Fatal("failed to create rode client", zap.Error(err))
+	}
 
-	if !pass && c.Enforce {
+	evaluatePolicyAction := action.NewEvaluateResourceAction(logger, c, rodeClient)
+	result, err := evaluatePolicyAction.Run(ctx)
+	if err != nil {
+		logger.Fatal("error evaluating resource", zap.Error(err))
+	}
+
+	logger.Info(result.EvaluationReport)
+	setOutputVariable("pass", result.Pass)
+
+	if result.FailBuild {
 		os.Exit(1)
 	}
 }

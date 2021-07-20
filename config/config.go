@@ -15,42 +15,56 @@
 package config
 
 import (
-	"context"
 	"errors"
+	"flag"
 	"strings"
 
-	"github.com/sethvargo/go-envconfig"
+	"github.com/peterbourgon/ff/v3"
+	"github.com/rode/rode/common"
 )
 
-type RodeConfig struct {
-	Host     string `env:"HOST,required"`
-	Insecure bool   `env:"INSECURE,required"`
+type GitHubConfig struct {
+	GitHubRunId      int
+	GitHubServerUrl  string
+	GitHubRepository string
 }
 
 type Config struct {
-	Enforce     bool        `env:"ENFORCE,required"`
-	PolicyId    string      `env:"POLICY_ID"`
-	PolicyName  string      `env:"POLICY_NAME"`
-	ResourceUri string      `env:"RESOURCE_URI,required"`
-	Rode        *RodeConfig `env:",prefix=RODE_"`
+	AccessToken  string
+	GitHub       *GitHubConfig
+	Enforce      bool
+	PolicyGroup  string
+	ResourceUri  string
+	ClientConfig *common.ClientConfig
 }
 
-func Build(ctx context.Context, l envconfig.Lookuper) (*Config, error) {
-	c := &Config{}
+func Build(name string, args []string) (*Config, error) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	c := &Config{
+		ClientConfig: common.SetupRodeClientFlags(flags),
+		GitHub:       &GitHubConfig{},
+	}
 
-	if err := envconfig.ProcessWith(ctx, c, l); err != nil {
+	flags.StringVar(&c.AccessToken, "access-token", "", "An access token that will be included in requests to Rode.")
+	flags.BoolVar(&c.Enforce, "enforce", true, "Controls whether the step should fail if the evaluation fails.")
+	flags.StringVar(&c.PolicyGroup, "policy-group", "", "The policy group to evaluate the resource against.")
+	flags.StringVar(&c.ResourceUri, "resource-uri", "", "The resource to evaluate policy against.")
+	flags.StringVar(&c.GitHub.GitHubServerUrl, "github-server-url", "", "The GitHub server url. This is set automatically when running in GitHub Actions.")
+	flags.StringVar(&c.GitHub.GitHubRepository, "github-repository", "", "An org/repo slug. This is set automatically when running in GitHub Actions.")
+	flags.IntVar(&c.GitHub.GitHubRunId, "github-run-id", 0, "The run id of a workflow. This is set automatically when running in GitHub Actions.")
+
+	if err := ff.Parse(flags, args, ff.WithEnvVarNoPrefix()); err != nil {
 		return nil, err
 	}
 
-	c.PolicyName = strings.TrimSpace(c.PolicyName)
-	c.PolicyId = strings.TrimSpace(c.PolicyId)
+	c.PolicyGroup = strings.TrimSpace(c.PolicyGroup)
 
-	if c.PolicyId == "" && c.PolicyName == "" {
-		return nil, errors.New("must set either policyName or policyId")
+	if c.PolicyGroup == "" {
+		return nil, errors.New("must set policy-group")
 	}
 
-	if c.PolicyId != "" && c.PolicyName != "" {
-		return nil, errors.New("only one of policyId or policyName should be specified")
+	if c.ResourceUri == "" {
+		return nil, errors.New("must set resource-uri")
 	}
 
 	return c, nil
