@@ -48,9 +48,9 @@ var _ = Describe("EnforcerAction", func() {
 			ResourceUri: expectedResourceUri,
 			PolicyGroup: expectedPolicyGroup,
 			GitHub: &config.GitHubConfig{
-				GitHubServerUrl:  fake.URL(),
-				GitHubRepository: fmt.Sprintf("%s/%s", fake.LetterN(10), fake.LetterN(10)),
-				GitHubRunId:      fake.Number(10, 100),
+				ServerUrl:  fake.URL(),
+				Repository: fmt.Sprintf("%s/%s", fake.LetterN(10), fake.LetterN(10)),
+				RunId:      fake.Number(10, 100),
 			},
 		}
 
@@ -117,11 +117,11 @@ var _ = Describe("EnforcerAction", func() {
 		When("the resource evaluation passes", func() {
 			It("should call Rode to evaluate the resource", func() {
 				expectedSourceUrl := strings.Join([]string{
-					conf.GitHub.GitHubServerUrl,
-					conf.GitHub.GitHubRepository,
+					conf.GitHub.ServerUrl,
+					conf.GitHub.Repository,
 					"actions",
 					"runs",
-					strconv.Itoa(conf.GitHub.GitHubRunId),
+					strconv.Itoa(conf.GitHub.RunId),
 				}, "/")
 
 				Expect(rodeClient.EvaluateResourceCallCount()).To(Equal(1))

@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/brianvoe/gofakeit/v6 v6.4.1
+	github.com/google/go-github/v35 v35.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.3.0 // indirect
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.14.0

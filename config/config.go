@@ -24,9 +24,11 @@ import (
 )
 
 type GitHubConfig struct {
-	GitHubRunId      int
-	GitHubServerUrl  string
-	GitHubRepository string
+	RunId             int
+	ServerUrl         string
+	Repository        string
+	Token             string
+	PullRequestNumber int
 }
 
 type Config struct {
@@ -49,9 +51,11 @@ func Build(name string, args []string) (*Config, error) {
 	flags.BoolVar(&c.Enforce, "enforce", true, "Controls whether the step should fail if the evaluation fails.")
 	flags.StringVar(&c.PolicyGroup, "policy-group", "", "The policy group to evaluate the resource against.")
 	flags.StringVar(&c.ResourceUri, "resource-uri", "", "The resource to evaluate policy against.")
-	flags.StringVar(&c.GitHub.GitHubServerUrl, "github-server-url", "", "The GitHub server url. This is set automatically when running in GitHub Actions.")
-	flags.StringVar(&c.GitHub.GitHubRepository, "github-repository", "", "An org/repo slug. This is set automatically when running in GitHub Actions.")
-	flags.IntVar(&c.GitHub.GitHubRunId, "github-run-id", 0, "The run id of a workflow. This is set automatically when running in GitHub Actions.")
+	flags.StringVar(&c.GitHub.ServerUrl, "github-server-url", "", "The GitHub server url. This is set automatically when running in GitHub Actions.")
+	flags.StringVar(&c.GitHub.Repository, "github-repository", "", "An org/repo slug. This is set automatically when running in GitHub Actions.")
+	flags.IntVar(&c.GitHub.RunId, "github-run-id", 0, "The run id of a workflow. This is set automatically when running in GitHub Actions.")
+	flags.StringVar(&c.GitHub.Token, "github-token", "", "a GitHub access token used to leave comments on pull requests.")
+	flags.IntVar(&c.GitHub.PullRequestNumber, "github-pr-number", 0, "the number of a pull request in --github-repository. when set, the action will post a comment on the pull request")
 
 	if err := ff.Parse(flags, args, ff.WithEnvVarNoPrefix()); err != nil {
 		return nil, err

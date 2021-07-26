@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/go-github/v35/github"
 	"github.com/rode/enforcer-action/config"
 	rode "github.com/rode/rode/proto/v1alpha1"
 	"go.uber.org/zap"
@@ -27,6 +28,7 @@ import (
 type EnforcerAction struct {
 	config *config.Config
 	client rode.RodeClient
+	github *github.Client
 	logger *zap.Logger
 }
 
@@ -36,10 +38,11 @@ type ActionResult struct {
 	EvaluationReport string
 }
 
-func NewEnforcerAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient) *EnforcerAction {
+func NewEnforcerAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient, githubClient *github.Client) *EnforcerAction {
 	return &EnforcerAction{
 		conf,
 		client,
+		githubClient,
 		logger,
 	}
 }
@@ -51,7 +54,7 @@ func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
 		ResourceUri: a.config.ResourceUri,
 		Source: &rode.ResourceEvaluationSource{
 			Name: "enforcer-action",
-			Url:  fmt.Sprintf("%s/%s/actions/runs/%d", a.config.GitHub.GitHubServerUrl, a.config.GitHub.GitHubRepository, a.config.GitHub.GitHubRunId),
+			Url:  fmt.Sprintf("%s/%s/actions/runs/%d", a.config.GitHub.ServerUrl, a.config.GitHub.Repository, a.config.GitHub.RunId),
 		},
 	})
 
@@ -59,34 +62,80 @@ func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
 		return nil, fmt.Errorf("error evaluating resource: %s", err)
 	}
 
-	var b strings.Builder
-	resultMessage := statusMessage(response.ResourceEvaluation.Pass)
-	fmt.Fprintf(&b, "Resource %s evaluation (id: %s):\n", resultMessage, response.ResourceEvaluation.Id)
+	report, err := a.createEvaluationReport(ctx, response)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, result := range response.PolicyEvaluations {
-		policy, err := a.client.GetPolicy(ctx, &rode.GetPolicyRequest{Id: result.PolicyVersionId})
+	if a.config.GitHub.PullRequestNumber != 0 {
+		a.logger.Info("Decorating pull request", zap.Int("pr", a.config.GitHub.PullRequestNumber))
+		// repository here is the owner/repo slug provided by the environment variable GITHUB_REPOSITORY, which is set by default
+		slug := strings.Split(a.config.GitHub.Repository, "/")
+		org := slug[0]
+		repo := slug[1]
+
+		// use the issues API to post a comment that's not correlated to a line in the pull request diff
+		// see https://docs.github.com/en/rest/reference/pulls#create-a-review-comment-for-a-pull-request
+		_, _, err = a.github.Issues.CreateComment(ctx, org, repo, a.config.GitHub.PullRequestNumber, &github.IssueComment{
+			Body: github.String(report),
+		})
+
 		if err != nil {
-			return nil, err
-		}
-
-		fmt.Fprintln(&b, fmt.Sprintf("\npolicy \"%s\" %s", policy.Name, statusMessage(result.Pass)))
-
-		for _, v := range result.Violations {
-			fmt.Fprintln(&b, v.Message)
+			return nil, fmt.Errorf("error posting pull request comment: %s", err)
 		}
 	}
 
 	return &ActionResult{
 		FailBuild:        a.config.Enforce && !response.ResourceEvaluation.Pass,
 		Pass:             response.ResourceEvaluation.Pass,
-		EvaluationReport: b.String(),
+		EvaluationReport: report,
 	}, nil
 }
 
 func statusMessage(pass bool) string {
 	if pass {
-		return "PASSED"
+		return "✅ (PASSED)"
 	}
 
-	return "FAILED"
+	return "❌ (FAILED)"
+}
+
+func (a *EnforcerAction) createEvaluationReport(ctx context.Context, evaluationResult *rode.ResourceEvaluationResult) (string, error) {
+	resourceEval := evaluationResult.ResourceEvaluation
+	md := markdownPrinter{}
+	md.
+		h1("Rode Resource Evaluation Report %s", statusMessage(resourceEval.Pass)).
+		quote("report id: "+resourceEval.Id).
+		h2("Resource Metadata").
+		table([]string{"Resource URI"}, [][]string{
+			{asCode(resourceEval.ResourceVersion.Version)},
+		})
+
+	if len(resourceEval.ResourceVersion.Names) > 0 {
+		var artifactNames []string
+		for _, name := range resourceEval.ResourceVersion.Names {
+			artifactNames = append(artifactNames, asCode(name))
+		}
+
+		md.h3("Artifact Names").list(artifactNames).newline()
+	}
+
+	md.h2("Policy Results")
+	for _, result := range evaluationResult.PolicyEvaluations {
+		policy, err := a.client.GetPolicy(ctx, &rode.GetPolicyRequest{Id: result.PolicyVersionId})
+		if err != nil {
+			return "", err
+		}
+
+		md.
+			h3("%s %s", policy.Name, statusMessage(result.Pass)).
+			codeBlock()
+
+		for _, v := range result.Violations {
+			md.write(v.Message)
+		}
+		md.codeBlock().newline()
+	}
+
+	return md.string(), nil
 }

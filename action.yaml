@@ -11,6 +11,7 @@ runs:
   env:
     ACCESS_TOKEN: ${{ inputs.accessToken }}
     ENFORCE: ${{ inputs.enforce }}
+    GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
     POLICY_GROUP: ${{ inputs.policyGroup }}
     RESOURCE_URI: ${{ inputs.resourceUri }}
     RODE_HOST: ${{ inputs.rodeHost }}
