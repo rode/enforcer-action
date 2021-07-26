@@ -119,5 +119,6 @@ func populateGitHubConfig() *GitHubConfig {
 		RunId:      runId,
 		ServerUrl:  os.Getenv("GITHUB_SERVER_URL"),
 		Repository: os.Getenv("GITHUB_REPOSITORY"),
+		Token:      os.Getenv("GITHUB_TOKEN"),
 	}
 }

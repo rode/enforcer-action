@@ -16,11 +16,16 @@ package action
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/google/go-github/v35/github"
+	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rode/enforcer-action/config"
@@ -31,30 +36,45 @@ import (
 
 var _ = Describe("EnforcerAction", func() {
 	var (
-		ctx                 = context.Background()
-		conf                *config.Config
-		rodeClient          *v1alpha1fakes.FakeRodeClient
-		action              *EnforcerAction
+		ctx          = context.Background()
+		conf         *config.Config
+		rodeClient   *v1alpha1fakes.FakeRodeClient
+		githubClient *github.Client
+		action       *EnforcerAction
+
 		expectedPolicyGroup string
 		expectedResourceUri string
+		expectedOrg         string
+		expectedRepo        string
 	)
 
 	BeforeEach(func() {
+
+		httpClient := &http.Client{}
+		httpmock.ActivateNonDefault(httpClient)
+		githubClient = github.NewClient(httpClient)
 		rodeClient = &v1alpha1fakes.FakeRodeClient{}
 		expectedPolicyGroup = fake.LetterN(10)
 		expectedResourceUri = fake.URL()
+		expectedOrg = fake.LetterN(10)
+		expectedRepo = fake.LetterN(10)
+
 		conf = &config.Config{
 			Enforce:     true,
 			ResourceUri: expectedResourceUri,
 			PolicyGroup: expectedPolicyGroup,
 			GitHub: &config.GitHubConfig{
 				ServerUrl:  fake.URL(),
-				Repository: fmt.Sprintf("%s/%s", fake.LetterN(10), fake.LetterN(10)),
+				Repository: fmt.Sprintf("%s/%s", expectedOrg, expectedRepo),
 				RunId:      fake.Number(10, 100),
 			},
 		}
 
-		action = NewEnforcerAction(logger, conf, rodeClient)
+		action = NewEnforcerAction(logger, conf, rodeClient, githubClient)
+	})
+
+	AfterEach(func() {
+		httpmock.DeactivateAndReset()
 	})
 
 	Describe("Run", func() {
@@ -74,6 +94,9 @@ var _ = Describe("EnforcerAction", func() {
 				ResourceEvaluation: &rode.ResourceEvaluation{
 					Id:   fake.UUID(),
 					Pass: true,
+					ResourceVersion: &rode.ResourceVersion{
+						Version: fake.URL(),
+					},
 				},
 			}
 			resourceEvaluationError = nil
@@ -136,7 +159,8 @@ var _ = Describe("EnforcerAction", func() {
 			It("should return the result of the evaluation", func() {
 				Expect(actualResult.Pass).To(BeTrue())
 				Expect(actualResult.FailBuild).To(BeFalse())
-				Expect(actualResult.EvaluationReport).To(ContainSubstring("Resource PASSED evaluation"))
+				Expect(actualResult.EvaluationReport).To(ContainSubstring("Resource Evaluation Report ✅ (PASSED)"))
+				Expect(actualResult.EvaluationReport).To(ContainSubstring(resourceEvaluationResult.ResourceEvaluation.Id))
 			})
 
 			It("should fetch the policy names to include in the output", func() {
@@ -154,6 +178,60 @@ var _ = Describe("EnforcerAction", func() {
 			It("should not return an error", func() {
 				Expect(actualError).To(BeNil())
 			})
+
+			When("the resource version has additional artifact names", func() {
+				var expectedNames []string
+
+				BeforeEach(func() {
+					expectedNames = []string{}
+					for i := 0; i < fake.Number(2, 5); i++ {
+						expectedNames = append(expectedNames, fake.Word())
+					}
+
+					resourceEvaluationResult.ResourceEvaluation.ResourceVersion.Names = expectedNames
+				})
+
+				It("should include the artifact names in the output", func() {
+					Expect(actualResult.EvaluationReport).To(ContainSubstring("Artifact Names"))
+					for _, name := range expectedNames {
+						Expect(actualResult.EvaluationReport).To(ContainSubstring(name))
+					}
+				})
+			})
+
+			When("a pull request number is specified", func() {
+				var (
+					expectedPrNumber int
+					actualRequest    *http.Request
+				)
+
+				BeforeEach(func() {
+					actualRequest = nil
+					expectedPrNumber = fake.Number(2, 100)
+					conf.GitHub.PullRequestNumber = expectedPrNumber
+
+					expectedUrl := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%d/comments", expectedOrg, expectedRepo, expectedPrNumber)
+
+					httpmock.RegisterResponder(http.MethodPost, expectedUrl, func(request *http.Request) (*http.Response, error) {
+						actualRequest = request
+
+						return &http.Response{
+							StatusCode: http.StatusOK,
+						}, nil
+					})
+				})
+
+				It("should post a comment on the pull request", func() {
+					Expect(actualRequest).NotTo(BeNil())
+
+					body, err := io.ReadAll(actualRequest.Body)
+					Expect(err).NotTo(HaveOccurred())
+					var actualComment github.IssueComment
+
+					Expect(json.Unmarshal(body, &actualComment)).NotTo(HaveOccurred())
+					Expect(*actualComment.Body).To(ContainSubstring("Rode Resource Evaluation Report"))
+				})
+			})
 		})
 
 		When("the resource fails evaluation", func() {
@@ -164,7 +242,7 @@ var _ = Describe("EnforcerAction", func() {
 			It("should fail the build", func() {
 				Expect(actualResult.Pass).To(BeFalse())
 				Expect(actualResult.FailBuild).To(BeTrue())
-				Expect(actualResult.EvaluationReport).To(ContainSubstring("Resource FAILED evaluation"))
+				Expect(actualResult.EvaluationReport).To(ContainSubstring("Resource Evaluation Report ❌ (FAILED)"))
 			})
 
 			When("enforcement is disabled", func() {
@@ -197,6 +275,20 @@ var _ = Describe("EnforcerAction", func() {
 		When("an error occurs fetching the policy", func() {
 			BeforeEach(func() {
 				rodeClient.GetPolicyReturns(nil, errors.New("get policy error"))
+			})
+
+			It("should return an error", func() {
+				Expect(actualResult).To(BeNil())
+				Expect(actualError).To(HaveOccurred())
+			})
+		})
+
+		When("an error occurs posting a PR comment", func() {
+			BeforeEach(func() {
+				conf.GitHub.PullRequestNumber = fake.Number(1, 100)
+				httpmock.RegisterNoResponder(func(request *http.Request) (*http.Response, error) {
+					return nil, errors.New("transport error")
+				})
 			})
 
 			It("should return an error", func() {

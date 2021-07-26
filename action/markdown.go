@@ -35,7 +35,7 @@ func (md *markdownPrinter) h2(title string, values ...interface{}) *markdownPrin
 	return md
 }
 
-func (md *markdownPrinter) h3(title string, values ...interface{})  *markdownPrinter {
+func (md *markdownPrinter) h3(title string, values ...interface{}) *markdownPrinter {
 	md.header(3, title, values...)
 
 	return md
