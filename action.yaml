@@ -11,6 +11,7 @@ runs:
   env:
     ACCESS_TOKEN: ${{ inputs.accessToken }}
     ENFORCE: ${{ inputs.enforce }}
+    GITHUB_TOKEN: ${{ inputs.githubToken }}
     GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
     POLICY_GROUP: ${{ inputs.policyGroup }}
     RESOURCE_URI: ${{ inputs.resourceUri }}
@@ -25,6 +26,9 @@ inputs:
     description: "Controls whether the step should fail if the evaluation fails."
     required: true
     default: "true"
+  githubToken:
+    description: "Use to post comments on pull requests"
+    required: false
   policyGroup:
     description: "The policy group to evaluate the resource against."
     required: true
