@@ -69,12 +69,12 @@ func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
 
 	if a.config.GitHub.PullRequestNumber != 0 {
 		a.logger.Info("Decorating pull request", zap.Int("pr", a.config.GitHub.PullRequestNumber))
-		// repository here is the owner/repo slug provided by the environment variable GITHUB_REPOSITORY, which is set by default
+		// repository here is the owner/repo slug provided by the environment variable GITHUB_REPOSITORY, which is set by default when running in GitHub Actions
 		slug := strings.Split(a.config.GitHub.Repository, "/")
 		org := slug[0]
 		repo := slug[1]
 
-		// use the issues API to post a comment that's not correlated to a line in the pull request diff
+		// use the issues API to post a comment that's not attached to a line in the pull request diff
 		// see https://docs.github.com/en/rest/reference/pulls#create-a-review-comment-for-a-pull-request
 		_, _, err = a.github.Issues.CreateComment(ctx, org, repo, a.config.GitHub.PullRequestNumber, &github.IssueComment{
 			Body: github.String(report),
@@ -90,14 +90,6 @@ func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
 		Pass:             response.ResourceEvaluation.Pass,
 		EvaluationReport: report,
 	}, nil
-}
-
-func statusMessage(pass bool) string {
-	if pass {
-		return "✅ (PASSED)"
-	}
-
-	return "❌ (FAILED)"
 }
 
 func (a *EnforcerAction) createEvaluationReport(ctx context.Context, evaluationResult *rode.ResourceEvaluationResult) (string, error) {
@@ -138,4 +130,12 @@ func (a *EnforcerAction) createEvaluationReport(ctx context.Context, evaluationR
 	}
 
 	return md.string(), nil
+}
+
+func statusMessage(pass bool) string {
+	if pass {
+		return "✅ (PASSED)"
+	}
+
+	return "❌ (FAILED)"
 }
