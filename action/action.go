@@ -172,7 +172,7 @@ func (a *EnforcerAction) decoratePullRequest(ctx context.Context, comment string
 	})
 
 	if err != nil {
-		return fmt.Errorf("error search for existing pull request comment: %s", err)
+		return fmt.Errorf("error searching for existing pull request comment: %s", err)
 	}
 
 	for _, prComment := range comments {
