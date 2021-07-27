@@ -7,7 +7,7 @@ branding:
 
 runs:
   using: docker
-  image: Dockerfile
+  image: docker://ghcr.io/rode/enforcer-action:latest
   env:
     ACCESS_TOKEN: ${{ inputs.accessToken }}
     ENFORCE: ${{ inputs.enforce }}
