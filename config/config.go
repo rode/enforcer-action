@@ -24,11 +24,12 @@ import (
 )
 
 type GitHubConfig struct {
-	RunId             int
-	ServerUrl         string
-	Repository        string
-	Token             string
-	PullRequestNumber int
+	EventName  string
+	EventPath  string
+	RunId      int
+	ServerUrl  string
+	Repository string
+	Token      string
 }
 
 type Config struct {
@@ -55,7 +56,8 @@ func Build(name string, args []string) (*Config, error) {
 	flags.StringVar(&c.GitHub.Repository, "github-repository", "", "An org/repo slug. This is set automatically when running in GitHub Actions.")
 	flags.IntVar(&c.GitHub.RunId, "github-run-id", 0, "The run id of a workflow. This is set automatically when running in GitHub Actions.")
 	flags.StringVar(&c.GitHub.Token, "github-token", "", "a GitHub access token used to leave comments on pull requests.")
-	flags.IntVar(&c.GitHub.PullRequestNumber, "github-pr-number", 0, "the number of a pull request in --github-repository. when set, the action will post a comment on the pull request")
+	flags.StringVar(&c.GitHub.EventName, "github-event-name", "", "the name of the event triggering the action")
+	flags.StringVar(&c.GitHub.EventPath, "github-event-path", "", "path to the GitHub event payload")
 
 	if err := ff.Parse(flags, args, ff.WithEnvVarNoPrefix()); err != nil {
 		return nil, err

@@ -16,13 +16,21 @@ package action
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/google/go-github/v35/github"
 	"github.com/rode/enforcer-action/config"
 	rode "github.com/rode/rode/proto/v1alpha1"
 	"go.uber.org/zap"
+)
+
+const (
+	githubPrEventName                 = "pull_request"
+	githubPrTargetEventName           = "pull_request_target"
+	evaluationReportCommentIdentifier = "generated-by: enforcer-action"
 )
 
 type EnforcerAction struct {
@@ -67,22 +75,8 @@ func (a *EnforcerAction) Run(ctx context.Context) (*ActionResult, error) {
 		return nil, err
 	}
 
-	if a.config.GitHub.PullRequestNumber != 0 {
-		a.logger.Info("Decorating pull request", zap.Int("pr", a.config.GitHub.PullRequestNumber))
-		// repository here is the owner/repo slug provided by the environment variable GITHUB_REPOSITORY, which is set by default when running in GitHub Actions
-		slug := strings.Split(a.config.GitHub.Repository, "/")
-		org := slug[0]
-		repo := slug[1]
-
-		// use the issues API to post a comment that's not attached to a line in the pull request diff
-		// see https://docs.github.com/en/rest/reference/pulls#create-a-review-comment-for-a-pull-request
-		_, _, err = a.github.Issues.CreateComment(ctx, org, repo, a.config.GitHub.PullRequestNumber, &github.IssueComment{
-			Body: github.String(report),
-		})
-
-		if err != nil {
-			return nil, fmt.Errorf("error posting pull request comment: %s", err)
-		}
+	if err = a.decoratePullRequest(ctx, report); err != nil {
+		return nil, err
 	}
 
 	return &ActionResult{
@@ -129,7 +123,87 @@ func (a *EnforcerAction) createEvaluationReport(ctx context.Context, evaluationR
 		md.codeBlock().newline()
 	}
 
+	// leave an HTML comment in the markdown so that we can find the comment on future job runs
+	md.comment(evaluationReportCommentIdentifier)
+
 	return md.string(), nil
+}
+
+type pullRequest struct {
+	Number int `json:"number"`
+}
+
+type pullRequestEvent struct {
+	PullRequest *pullRequest `json:"pull_request"`
+}
+
+func (a *EnforcerAction) decoratePullRequest(ctx context.Context, comment string) error {
+	shouldDecoratePullRequest := a.config.GitHub.EventName == githubPrEventName ||
+		a.config.GitHub.EventName == githubPrTargetEventName && a.config.GitHub.EventPath != ""
+
+	if !shouldDecoratePullRequest {
+		a.logger.Info("Skipping pull request decoration")
+		return nil
+	}
+
+	eventJson, err := os.ReadFile(a.config.GitHub.EventPath)
+	if err != nil {
+		return fmt.Errorf("error reading event payload at %s: %s", a.config.GitHub.EventPath, err)
+	}
+
+	var prEvent pullRequestEvent
+	if err := json.Unmarshal(eventJson, &prEvent); err != nil {
+		return fmt.Errorf("error unmarshalling event json: %s",err)
+	}
+
+	a.logger.Info("Decorating pull request", zap.Int("pr", prEvent.PullRequest.Number))
+	// repository here is the owner/repo slug provided by the environment variable GITHUB_REPOSITORY, which is set by default when running in GitHub Actions
+	slug := strings.Split(a.config.GitHub.Repository, "/")
+	org := slug[0]
+	repo := slug[1]
+
+	var existingCommentId int64
+	comments, _, err := a.github.Issues.ListComments(ctx, org, repo, prEvent.PullRequest.Number, &github.IssueListCommentsOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("error search for existing pull request comment: %s", err)
+	}
+
+	for _, comment := range comments {
+		if strings.Contains(*comment.Body, evaluationReportCommentIdentifier) {
+			existingCommentId = *comment.ID
+			break
+		}
+	}
+
+	if existingCommentId != 0 {
+		a.logger.Info("Found existing comment, updating", zap.Int64("commentId", existingCommentId))
+		_, _, err := a.github.Issues.EditComment(ctx, org, repo, existingCommentId, &github.IssueComment{
+			Body: github.String(comment),
+		})
+
+		if err != nil {
+			return fmt.Errorf("error updating comment (id: %d): %s", existingCommentId, err)
+		}
+
+		return nil
+	}
+
+	// use the issues API to post a comment that's not attached to a line in the pull request diff
+	// see https://docs.github.com/en/rest/reference/pulls#create-a-review-comment-for-a-pull-request
+	_, _, err = a.github.Issues.CreateComment(ctx, org, repo, prEvent.PullRequest.Number, &github.IssueComment{
+		Body: github.String(comment),
+	})
+
+	if err != nil {
+		return fmt.Errorf("error decorating pull request: %s", err)
+	}
+
+	return nil
 }
 
 func statusMessage(pass bool) string {

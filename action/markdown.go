@@ -41,6 +41,14 @@ func (md *markdownPrinter) h3(title string, values ...interface{}) *markdownPrin
 	return md
 }
 
+func (md *markdownPrinter) comment(message string) *markdownPrinter {
+	fmt.Fprint(&md.builder, "<!---")
+	fmt.Fprint(&md.builder, message)
+	fmt.Fprintln(&md.builder, "--->")
+
+	return md
+}
+
 func (md *markdownPrinter) header(depth int, title string, values ...interface{}) {
 	for i := 0; i < depth; i++ {
 		fmt.Fprint(&md.builder, "#")
