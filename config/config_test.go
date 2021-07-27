@@ -116,6 +116,8 @@ func populateGitHubConfig() *GitHubConfig {
 	}
 
 	return &GitHubConfig{
+		EventName:  os.Getenv("GITHUB_EVENT_NAME"),
+		EventPath:  os.Getenv("GITHUB_EVENT_PATH"),
 		RunId:      runId,
 		ServerUrl:  os.Getenv("GITHUB_SERVER_URL"),
 		Repository: os.Getenv("GITHUB_REPOSITORY"),

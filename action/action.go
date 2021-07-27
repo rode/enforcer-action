@@ -33,6 +33,8 @@ const (
 	evaluationReportCommentIdentifier = "generated-by: enforcer-action"
 )
 
+var osReadFile = os.ReadFile
+
 type EnforcerAction struct {
 	config *config.Config
 	client rode.RodeClient
@@ -44,6 +46,14 @@ type ActionResult struct {
 	Pass             bool
 	FailBuild        bool
 	EvaluationReport string
+}
+
+type pullRequest struct {
+	Number int `json:"number"`
+}
+
+type pullRequestEvent struct {
+	PullRequest *pullRequest `json:"pull_request"`
 }
 
 func NewEnforcerAction(logger *zap.Logger, conf *config.Config, client rode.RodeClient, githubClient *github.Client) *EnforcerAction {
@@ -129,31 +139,23 @@ func (a *EnforcerAction) createEvaluationReport(ctx context.Context, evaluationR
 	return md.string(), nil
 }
 
-type pullRequest struct {
-	Number int `json:"number"`
-}
-
-type pullRequestEvent struct {
-	PullRequest *pullRequest `json:"pull_request"`
-}
-
 func (a *EnforcerAction) decoratePullRequest(ctx context.Context, comment string) error {
-	shouldDecoratePullRequest := a.config.GitHub.EventName == githubPrEventName ||
-		a.config.GitHub.EventName == githubPrTargetEventName && a.config.GitHub.EventPath != ""
+	shouldDecoratePullRequest := (a.config.GitHub.EventName == githubPrEventName ||
+		a.config.GitHub.EventName == githubPrTargetEventName) && a.config.GitHub.EventPath != ""
 
 	if !shouldDecoratePullRequest {
 		a.logger.Info("Skipping pull request decoration")
 		return nil
 	}
 
-	eventJson, err := os.ReadFile(a.config.GitHub.EventPath)
+	eventJson, err := osReadFile(a.config.GitHub.EventPath)
 	if err != nil {
 		return fmt.Errorf("error reading event payload at %s: %s", a.config.GitHub.EventPath, err)
 	}
 
 	var prEvent pullRequestEvent
 	if err := json.Unmarshal(eventJson, &prEvent); err != nil {
-		return fmt.Errorf("error unmarshalling event json: %s",err)
+		return fmt.Errorf("error unmarshalling event json: %s", err)
 	}
 
 	a.logger.Info("Decorating pull request", zap.Int("pr", prEvent.PullRequest.Number))
@@ -173,9 +175,9 @@ func (a *EnforcerAction) decoratePullRequest(ctx context.Context, comment string
 		return fmt.Errorf("error search for existing pull request comment: %s", err)
 	}
 
-	for _, comment := range comments {
-		if strings.Contains(*comment.Body, evaluationReportCommentIdentifier) {
-			existingCommentId = *comment.ID
+	for _, prComment := range comments {
+		if strings.Contains(*prComment.Body, evaluationReportCommentIdentifier) {
+			existingCommentId = *prComment.ID
 			break
 		}
 	}

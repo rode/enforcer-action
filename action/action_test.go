@@ -15,6 +15,7 @@
 package action
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -64,6 +65,7 @@ var _ = Describe("EnforcerAction", func() {
 			ResourceUri: expectedResourceUri,
 			PolicyGroup: expectedPolicyGroup,
 			GitHub: &config.GitHubConfig{
+				EventName:  fake.Word(),
 				ServerUrl:  fake.URL(),
 				Repository: fmt.Sprintf("%s/%s", expectedOrg, expectedRepo),
 				RunId:      fake.Number(10, 100),
@@ -199,37 +201,170 @@ var _ = Describe("EnforcerAction", func() {
 				})
 			})
 
-			When("a pull request number is specified", func() {
+			When("a pull request triggers the workflow", func() {
 				var (
-					expectedPrNumber int
-					actualRequest    *http.Request
+					expectedPrNumber           int
+					expectedCommentId          int64
+					createOrEditCommentRequest *http.Request
+
+					readFileError error
+
+					listCommentsResponse *http.Response
+					postCommentResponse  *http.Response
+					editCommentResponse  *http.Response
 				)
 
 				BeforeEach(func() {
-					actualRequest = nil
+					createOrEditCommentRequest = nil
+
 					expectedPrNumber = fake.Number(2, 100)
-					conf.GitHub.PullRequestNumber = expectedPrNumber
+					conf.GitHub.EventName = fake.RandomString([]string{"pull_request", "pull_request_target"})
+					conf.GitHub.EventPath = fmt.Sprintf("/%s/%s/event.json", fake.LetterN(10), fake.LetterN(10))
 
-					expectedUrl := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%d/comments", expectedOrg, expectedRepo, expectedPrNumber)
+					eventPayload, _ := json.Marshal(&pullRequestEvent{
+						PullRequest: &pullRequest{Number: expectedPrNumber},
+					})
+					readFileError = nil
+					osReadFile = func(name string) ([]byte, error) {
+						if name != conf.GitHub.EventPath {
+							return nil, fmt.Errorf("wrong file name")
+						}
 
-					httpmock.RegisterResponder(http.MethodPost, expectedUrl, func(request *http.Request) (*http.Response, error) {
-						actualRequest = request
+						return eventPayload, readFileError
+					}
 
-						return &http.Response{
-							StatusCode: http.StatusOK,
-						}, nil
+					expectedCommentId = fake.Int64()
+					listCommentsResponse = &http.Response{StatusCode: http.StatusOK}
+					postCommentResponse = &http.Response{StatusCode: http.StatusOK}
+					editCommentResponse = &http.Response{StatusCode: http.StatusOK}
+
+					baseUrl := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues", expectedOrg, expectedRepo)
+					baseCommentsUrl := fmt.Sprintf("%s/%d/comments", baseUrl, expectedPrNumber)
+
+					httpmock.RegisterResponder(http.MethodGet, baseCommentsUrl, func(request *http.Request) (*http.Response, error) {
+						return listCommentsResponse, nil
+					})
+
+					httpmock.RegisterResponder(http.MethodPost, baseCommentsUrl, func(request *http.Request) (*http.Response, error) {
+						createOrEditCommentRequest = request
+
+						return postCommentResponse, nil
+					})
+
+					httpmock.RegisterResponder(http.MethodPatch, fmt.Sprintf("%s/comments/%d", baseUrl, expectedCommentId), func(request *http.Request) (*http.Response, error) {
+						createOrEditCommentRequest = request
+
+						return editCommentResponse, nil
 					})
 				})
 
 				It("should post a comment on the pull request", func() {
-					Expect(actualRequest).NotTo(BeNil())
+					Expect(createOrEditCommentRequest).NotTo(BeNil())
 
-					body, err := io.ReadAll(actualRequest.Body)
+					body, err := io.ReadAll(createOrEditCommentRequest.Body)
 					Expect(err).NotTo(HaveOccurred())
 					var actualComment github.IssueComment
 
 					Expect(json.Unmarshal(body, &actualComment)).NotTo(HaveOccurred())
 					Expect(*actualComment.Body).To(ContainSubstring("Rode Resource Evaluation Report"))
+					Expect(httpmock.GetTotalCallCount()).To(Equal(2))
+				})
+
+				When("there is an existing comment from the action", func() {
+					BeforeEach(func() {
+						comments := []*github.IssueComment{}
+
+						for i := 0; i < fake.Number(2, 5); i++ {
+							comments = append(comments, &github.IssueComment{
+								ID:   github.Int64(fake.Int64()),
+								Body: github.String(fake.Word()),
+							})
+						}
+
+						randomIndex := fake.Number(0, len(comments)-1)
+						comments[randomIndex].ID = github.Int64(expectedCommentId)
+						comments[randomIndex].Body = github.String(fake.Word() + evaluationReportCommentIdentifier + fake.Word())
+
+						body, _ := json.Marshal(comments)
+
+						listCommentsResponse.Body = io.NopCloser(bytes.NewReader(body))
+					})
+
+					It("should edit the existing comment instead of posting a new one", func() {
+						Expect(createOrEditCommentRequest).NotTo(BeNil())
+						Expect(createOrEditCommentRequest.URL.Path).To(HaveSuffix(fmt.Sprintf("/comments/%d", expectedCommentId)))
+						Expect(createOrEditCommentRequest.Method).To(Equal(http.MethodPatch))
+						Expect(httpmock.GetTotalCallCount()).To(Equal(2))
+					})
+
+					When("an error occurs updating the current comment", func() {
+						BeforeEach(func() {
+							editCommentResponse.StatusCode = http.StatusInternalServerError
+						})
+
+						It("should return an error", func() {
+							Expect(actualResult).To(BeNil())
+							Expect(actualError).To(HaveOccurred())
+						})
+					})
+				})
+
+				When("the event payload is missing", func() {
+					BeforeEach(func() {
+						conf.GitHub.EventPath = ""
+					})
+
+					It("should not try to decorate the pull request", func() {
+						Expect(httpmock.GetTotalCallCount()).To(Equal(0))
+						Expect(actualError).NotTo(HaveOccurred())
+					})
+				})
+
+				When("the event payload is malformed", func() {
+					BeforeEach(func() {
+						osReadFile = func(_ string) ([]byte, error) {
+							return []byte{'}'}, nil
+						}
+					})
+
+					It("should return an error", func() {
+						Expect(actualError).To(HaveOccurred())
+						Expect(httpmock.GetTotalCallCount()).To(Equal(0))
+					})
+				})
+
+				When("an error occurs reading the payload", func() {
+					BeforeEach(func() {
+						readFileError = errors.New("io error")
+					})
+
+					It("should return an error", func() {
+						Expect(actualError).To(HaveOccurred())
+						Expect(httpmock.GetTotalCallCount()).To(Equal(0))
+					})
+				})
+
+				When("an error occurs listing PR comments", func() {
+					BeforeEach(func() {
+						listCommentsResponse.StatusCode = http.StatusInternalServerError
+					})
+
+					It("should return an error", func() {
+						Expect(actualResult).To(BeNil())
+						Expect(actualError).To(HaveOccurred())
+						Expect(httpmock.GetTotalCallCount()).To(Equal(1))
+					})
+				})
+
+				When("an error occurs posting a PR comment", func() {
+					BeforeEach(func() {
+						postCommentResponse.StatusCode = http.StatusInternalServerError
+					})
+
+					It("should return an error", func() {
+						Expect(actualResult).To(BeNil())
+						Expect(actualError).To(HaveOccurred())
+					})
 				})
 			})
 		})
@@ -275,20 +410,6 @@ var _ = Describe("EnforcerAction", func() {
 		When("an error occurs fetching the policy", func() {
 			BeforeEach(func() {
 				rodeClient.GetPolicyReturns(nil, errors.New("get policy error"))
-			})
-
-			It("should return an error", func() {
-				Expect(actualResult).To(BeNil())
-				Expect(actualError).To(HaveOccurred())
-			})
-		})
-
-		When("an error occurs posting a PR comment", func() {
-			BeforeEach(func() {
-				conf.GitHub.PullRequestNumber = fake.Number(1, 100)
-				httpmock.RegisterNoResponder(func(request *http.Request) (*http.Response, error) {
-					return nil, errors.New("transport error")
-				})
 			})
 
 			It("should return an error", func() {
