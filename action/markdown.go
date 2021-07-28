@@ -118,7 +118,7 @@ func (md *markdownPrinter) newline() *markdownPrinter {
 
 func (md *markdownPrinter) list(items []string) *markdownPrinter {
 	for _, item := range items {
-		fmt.Fprint(&md.builder, "-")
+		fmt.Fprint(&md.builder, "- ")
 		fmt.Fprintln(&md.builder, item)
 	}
 
