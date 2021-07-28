@@ -19,10 +19,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/google/go-github/v35/github"
 	"github.com/rode/enforcer-action/action"
 	"github.com/rode/enforcer-action/config"
 	"github.com/rode/rode/common"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 )
 
@@ -59,6 +61,16 @@ func (s *staticCredential) RequireTransportSecurity() bool {
 	return s.requireTransportSecurity
 }
 
+func newGitHubClient(c *config.GitHubConfig) *github.Client {
+	tokenSource := oauth2.StaticTokenSource(
+		&oauth2.Token{
+			AccessToken: c.Token,
+		},
+	)
+
+	return github.NewClient(oauth2.NewClient(context.Background(), tokenSource))
+}
+
 func main() {
 	ctx := context.Background()
 	c, err := config.Build(os.Args[0], os.Args[1:])
@@ -84,7 +96,7 @@ func main() {
 		logger.Fatal("failed to create rode client", zap.Error(err))
 	}
 
-	enforcer := action.NewEnforcerAction(logger, c, rodeClient)
+	enforcer := action.NewEnforcerAction(logger, c, rodeClient, newGitHubClient(c.GitHub))
 	result, err := enforcer.Run(ctx)
 	if err != nil {
 		logger.Fatal("error evaluating resource", zap.Error(err))
