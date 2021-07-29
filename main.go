@@ -37,8 +37,8 @@ func newLogger() (*zap.Logger, error) {
 	return c.Build()
 }
 
-func setOutputVariable(name string, value bool) {
-	fmt.Printf("::set-output name=%s::%t", name, value)
+func setOutputVariable(name string, value interface{}) {
+	fmt.Printf("\n::set-output name=%s::%v\n", name, value)
 }
 
 func fatal(message string) {
@@ -69,6 +69,21 @@ func newGitHubClient(c *config.GitHubConfig) *github.Client {
 	)
 
 	return github.NewClient(oauth2.NewClient(context.Background(), tokenSource))
+}
+
+func writeEvaluationReport(logger *zap.Logger, report string) string {
+	reportDir := os.TempDir()
+	file, err := os.CreateTemp(reportDir, "report-*.json")
+	if err != nil {
+		logger.Fatal("error opening temporary file", zap.Error(err))
+	}
+	defer file.Close()
+
+	if _, err = file.WriteString(report); err != nil {
+		logger.Fatal("error writing report to disk", zap.Error(err))
+	}
+
+	return file.Name()
 }
 
 func main() {
@@ -103,7 +118,12 @@ func main() {
 	}
 
 	logger.Info(result.EvaluationReport)
+	reportPath := writeEvaluationReport(logger, result.EvaluationReport)
+
+	logger.Info("Wrote evaluation report", zap.String("report", reportPath))
+
 	setOutputVariable("pass", result.Pass)
+	setOutputVariable("reportPath", reportPath)
 
 	if result.FailBuild {
 		os.Exit(1)
