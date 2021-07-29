@@ -30,6 +30,7 @@ type GitHubConfig struct {
 	ServerUrl  string
 	Repository string
 	Token      string
+	Workspace  string
 }
 
 type Config struct {
@@ -58,6 +59,7 @@ func Build(name string, args []string) (*Config, error) {
 	flags.StringVar(&c.GitHub.Token, "github-token", "", "a GitHub access token used to leave comments on pull requests.")
 	flags.StringVar(&c.GitHub.EventName, "github-event-name", "", "the name of the event triggering the action")
 	flags.StringVar(&c.GitHub.EventPath, "github-event-path", "", "path to the GitHub event payload")
+	flags.StringVar(&c.GitHub.Workspace, "github-workspace", "", "GitHub Actions working directory")
 
 	if err := ff.Parse(flags, args, ff.WithEnvVarNoPrefix()); err != nil {
 		return nil, err

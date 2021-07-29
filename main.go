@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/google/go-github/v35/github"
 	"github.com/rode/enforcer-action/action"
@@ -71,19 +72,13 @@ func newGitHubClient(c *config.GitHubConfig) *github.Client {
 	return github.NewClient(oauth2.NewClient(context.Background(), tokenSource))
 }
 
-func writeEvaluationReport(logger *zap.Logger, report string) string {
-	reportDir := os.TempDir()
-	file, err := os.CreateTemp(reportDir, "report-*.json")
-	if err != nil {
-		logger.Fatal("error opening temporary file", zap.Error(err))
-	}
-	defer file.Close()
-
-	if _, err = file.WriteString(report); err != nil {
-		logger.Fatal("error writing report to disk", zap.Error(err))
+func writeEvaluationReport(logger *zap.Logger, directory, report string) string {
+	filePath := path.Join(directory, "report.md")
+	if err := os.WriteFile(filePath, []byte(report), os.ModePerm); err != nil {
+		logger.Fatal("error writing report", zap.Error(err))
 	}
 
-	return file.Name()
+	return filePath
 }
 
 func main() {
@@ -118,7 +113,7 @@ func main() {
 	}
 
 	logger.Info(result.EvaluationReport)
-	reportPath := writeEvaluationReport(logger, result.EvaluationReport)
+	reportPath := writeEvaluationReport(logger, c.GitHub.Workspace, result.EvaluationReport)
 
 	logger.Info("Wrote evaluation report", zap.String("report", reportPath))
 
