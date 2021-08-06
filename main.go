@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/google/go-github/v35/github"
 	"github.com/rode/enforcer-action/action"
@@ -37,8 +38,8 @@ func newLogger() (*zap.Logger, error) {
 	return c.Build()
 }
 
-func setOutputVariable(name string, value bool) {
-	fmt.Printf("::set-output name=%s::%t", name, value)
+func setOutputVariable(name string, value interface{}) {
+	fmt.Printf("\n::set-output name=%s::%v\n", name, value)
 }
 
 func fatal(message string) {
@@ -69,6 +70,15 @@ func newGitHubClient(c *config.GitHubConfig) *github.Client {
 	)
 
 	return github.NewClient(oauth2.NewClient(context.Background(), tokenSource))
+}
+
+func writeEvaluationReport(logger *zap.Logger, directory, report string) string {
+	filePath := path.Join(directory, "report.md")
+	if err := os.WriteFile(filePath, []byte(report), os.ModePerm); err != nil {
+		logger.Fatal("error writing report", zap.Error(err))
+	}
+
+	return filePath
 }
 
 func main() {
@@ -103,7 +113,12 @@ func main() {
 	}
 
 	logger.Info(result.EvaluationReport)
+	reportPath := writeEvaluationReport(logger, c.GitHub.Workspace, result.EvaluationReport)
+
+	logger.Info("Wrote evaluation report", zap.String("report", reportPath))
+
 	setOutputVariable("pass", result.Pass)
+	setOutputVariable("reportPath", reportPath)
 
 	if result.FailBuild {
 		os.Exit(1)

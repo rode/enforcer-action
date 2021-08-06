@@ -44,9 +44,11 @@ These settings are taken from the default GitHub Actions environment, but can al
 
 ### Outputs
 
-| Output | Description                                 |
-|--------|---------------------------------------------|
-| `pass` | The boolean result of the policy evaluation |
+| Output       | Description                                 |
+|--------------|---------------------------------------------|
+| `pass`       | The boolean result of the policy evaluation |
+| `reportPath` | A path to a summary of evaluation results   |
+
 
 ## Local Development
 

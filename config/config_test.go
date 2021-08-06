@@ -122,5 +122,6 @@ func populateGitHubConfig() *GitHubConfig {
 		ServerUrl:  os.Getenv("GITHUB_SERVER_URL"),
 		Repository: os.Getenv("GITHUB_REPOSITORY"),
 		Token:      os.Getenv("GITHUB_TOKEN"),
+		Workspace:  os.Getenv("GITHUB_WORKSPACE"),
 	}
 }
