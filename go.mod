@@ -10,7 +10,7 @@ require (
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.14.0
 	github.com/peterbourgon/ff/v3 v3.1.0
-	github.com/rode/rode v0.14.4
+	github.com/rode/rode v0.14.9
 	go.uber.org/zap v1.18.1
 	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602
 	google.golang.org/genproto v0.0.0-20210406143921-e86de6bf7a46 // indirect
